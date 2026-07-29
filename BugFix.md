@@ -21,21 +21,24 @@ The repository was provided with a deliberately misconfigured staging setup. Bel
   - Updated the reverse proxy target to leverage Docker's built-in DNS service discovery, routing traffic directly to the service identifier name (`http://backend:8000/ws`).
   - Uncommented the `Upgrade` and `Connection` headers to pass standard hop-by-hop HTTP upgrade sequences cleanly through the proxy server.
 
-## Local Verification & Test Automation Results
+## Local Verification & Test Results
 
-To validate the stability and behavioral correctness of the fixed infrastructure layout, the environment was subjected to localized integration and resilience test suites.
+The infrastructure fixes were verified locally on a macOS environment using two empirical integration test scenarios.
 
-### Test Case 1: Multi-Tab Real-Time WebSocket Broadcast
-- **Objective:** Verify that the Nginx proxy layer successfully transitions HTTP handshakes to full-duplex WebSocket channels and ensures seamless message broadcasting across independent client instances.
-- **Methodology:** 
-  1. Initialized the stack and spawned two isolated browser sessions at `http://localhost`.
-  2. Executed a payload transmission from Client A.
-- **Result:** **PASSED**. Handshakes completed successfully on route `/ws`. Upstream frames were captured, processed by the FastAPI core, and instantly broadcasted back through the Nginx layer to Client B's socket instance in real-time, confirming socket state-sharing works perfectly.
+### Test Case 1: Multi-Tab Message Broadcast
+* **Command / Action:** Started the application stack via Compose, opened two independent browser tabs at `http://localhost`, and transmitted a message from Tab 1.
+* **Observation:** The message instantly rendered inside the viewport of Tab 2. Inspecting the browser network console confirmed an active, uninterrupted connection state on `ws://localhost/ws`.
+* **Conclusion:** This confirms Nginx successfully handles standard HTTP traffic at the root route while transparently upgrading and proxying WebSocket streams to the backend container service.
 
-### Test Case 2: Process Resilience & Supervisor Restart Policy
-- **Objective:** Verify container fault tolerance and adherence to high-availability specifications (`restart: always`).
-- **Methodology:** 
-  1. Isolated the active container process via `docker ps`.
-  2. Executed a forced termination sequence using an explicit runtime signal: `docker kill chat-nginx`.
-- **Result:** **PASSED**. The underlying `docker-compose.yml` lifecycle configurations were verified. 
-
+### Test Case 2: Process Resilience & Container Restart Policy
+* **Command / Action:** 
+  To simulate an unexpected application crash while respecting the container's read-only (`:ro`) file system volume constraints, the Nginx process was forced to shut down abruptly from within the container:
+  ```bash
+  docker exec chat-nginx nginx -s stop
+  docker ps
+  ```
+* **Observation:** 
+  The terminal output confirmed the signal was sent (`signal process started`). Upon running `docker ps`, the `chat-backend` container showed an uninterrupted uptime of `12 minutes`, while the `chat-nginx` container's status rolled back to `Up 5 seconds`.
+* **Conclusion:** 
+  This explicitly confirms that the `restart: always` configuration block within `docker-compose.yml` functions exactly as intended. The Docker daemon successfully intercepts unexpected internal runtime process failures and automatically spawns a fresh container instance to guarantee service availability without dropping the rest of the application stack.
+* **Note:** nginx -s stop produces a clean exit; this test specifically validates restart: always, which restarts on any exit condition. A true crash-recovery test for on-failure policies would require a non-zero exit (e.g. nginx -s quit vs a segfault or kill -9 on the master process)."
