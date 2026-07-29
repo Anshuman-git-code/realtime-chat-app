@@ -1,0 +1,29 @@
+name: Chat Application Deployment Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify-runner:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Display Runner Information
+        run: |
+          echo "Current User:"
+          whoami
+
+          echo ""
+
+          echo "Current Working Directory:"
+          pwd
+
+          echo ""
+
+          echo "Repository Files:"
+          ls -la
