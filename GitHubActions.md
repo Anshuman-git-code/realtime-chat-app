@@ -109,3 +109,23 @@ without changing the overall workflow architecture.
 Only the execution environment changes.
 
 ---
+
+## ADR 02 — Deployment Workspace Allocation Strategy
+
+### Context
+Since the GitHub Actions runner agent is deployed natively inside our target staging instance, a structural workspace mapping choice must be settled. We must determine whether the container orchestration loop should run straight from the runner’s internal work directory or inside a decoupled, separate deployment directory on the host.
+
+### Options Considered
+
+#### Option A — Decoupled Host Production Directory
+- **Advantages:** Absolute separation of operational domains; allows wiping, re-installing, or updates to the GitHub Actions runner binaries without risking downtime or modifications to the active application source paths.
+- **Disadvantages:** Increases pipeline step layout complexity under tight submission time limits by introducing an explicit secondary local directory synchronization pass (e.g., `rsync` or local copy).
+
+#### Option B — Direct Runner Workspace Execution
+- **Advantages:** Highly streamlined automation pipeline; less configuration script overhead; container lifecycle tools execute directly out of the runner's ephemeral checkout block, fully answering the core assignment automation constraints.
+- **Disadvantages:** Directly couples the running containers to the internal hidden paths managed exclusively by the runner daemon (`_work/...`).
+
+### Decision & Trade-Off Evaluation
+**Selected: Option B (Direct Runner Workspace Execution).**
+
+Given the close project submission deadline, Option B provides the fastest and most reliable path to end-to-end automation with the lowest probability of execution failure. This architectural trade-off is accepted for the staging scope of this assignment. In a permanent enterprise cloud environment, Option A would be explicitly deployed to guarantee clean operational decoupling between integration agents and production runtimes.
