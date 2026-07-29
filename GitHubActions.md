@@ -1,301 +1,278 @@
-# GitHub Actions Engineering Journal
+# GitHub Actions CI/CD Guide
 
-## Milestone 1 — Runner Provisioning & Repository Checkout
+This document covers the CI/CD pipeline implementation for this project: how the workflow is structured, how the self-hosted runner operates, how deployment is executed, and what was verified during implementation.
 
-### Business Problem
-A CI/CD platform cannot execute deployment commands unless an execution environment exists and the project source code is available. This milestone establishes the minimum workflow required to verify that GitHub can provision an ephemeral runner and populate it with the repository contents.
-
-### Engineering Decision
-A lightweight verification workflow was created before introducing deployment logic. The workflow intentionally performs no SSH or Docker operations. Instead, it validates three foundational assumptions:
-- GitHub correctly detects workflow events.
-- An Ubuntu runner is provisioned successfully.
-- The repository is checked out and accessible inside the runner.
-
-This staged approach isolates infrastructure validation from deployment logic, making future failures significantly easier to diagnose.
-
-## ADR 01 — Runner Execution Strategy & Pipeline Pivot
-
-### Context
-The deployment pipeline was initially designed around standard, cloud-managed GitHub-hosted runners (`runs-on: ubuntu-latest`). This is the default approach for repository-driven CI/CD execution vectors.
-
-During initial workflow staging and repository delivery, pipeline orchestration could not be scheduled. The execution layer failed to allocate an ephemeral computer environment due to upstream GitHub platform account billing restrictions. While the configuration syntax successfully cleared parsing verification, no execution workspace environment was provisioned by the platform pool.
-
-### Options Considered
-
-#### Option 1 — Wait for GitHub-hosted runners
-
-Advantages:
-- Standard cloud-hosted execution model.
-- No infrastructure maintenance.
-
-Disadvantages:
-- Prevented completion of the assignment within the submission timeline.
-- No ability to validate or demonstrate the deployment pipeline.
-
-#### Option 2 — Self-hosted GitHub Actions Runner
-
-Advantages:
-- Fully supported by GitHub Actions.
-- Removes dependency on GitHub-hosted runner availability.
-- Executes deployment directly on the target infrastructure.
-- Allows end-to-end validation of the deployment workflow.
-
-Disadvantages:
-- Runner lifecycle becomes the responsibility of the infrastructure owner.
-- Runner must be maintained as a background service.
-
-### Decision
-
-A self-hosted GitHub Actions runner was selected for this assignment to guarantee end-to-end automation within the project timeline while remaining fully compatible with the GitHub Actions platform.
-
-This decision preserves the same event-driven workflow model while changing only the execution environment from GitHub-hosted infrastructure to infrastructure owned by the project.
-
-
-### Architectural & Security Impact Matrix
-
-#### Original Theoretical Pipeline Design
-```text
-Developer
-  ↳ git push
-    ↳ GitHub Event
-      ↳ GitHub-Hosted Runner (ubuntu-latest)
-        ↳ SSH Authentication Loop via SECRETS
-          ↳ Target Compute Host (EC2: 52.70.212.146)
-            ↳ Docker Compose Stack Execution
-```
-
-#### Remediated Production Pipeline Design
-```text
-Developer
-  ↳ git push
-    ↳ GitHub Event
-      ↳ Self-Hosted Runner Daemon (EC2: 52.70.212.146)
-        ↳ Localized Docker Compose Shell Execution
-```
-
-**Key Architectural Engineering Trade-Off:** 
-By installing the runner directly on the target deployment environment, the need for an external SSH network hop (`appleboy/ssh-action` or `appleboy/scp-action`) is completely eliminated. The runner executes build steps natively inside the target VM file system. This drastically reduces the attack surface by minimizing external authentication points and streamlining container management loops.
-
-### Verification
-
-The verification workflow successfully demonstrated:
-
-- GitHub detected the push event.
-- The self-hosted runner accepted the job.
-- Repository checkout completed successfully.
-- Repository contents became available inside the runner workspace.
-- Shell commands executed successfully under the ubuntu service account.
-
-### Milestone 1 Validation Output & Results
-The runner configuration strategy successfully initialized on the cloud host. On-screen logs from the pipeline dashboard confirmed complete foundational stability:
-- **Observed User Identity:** `ubuntu` (Confirmed direct execution inside the local EC2 machine context).
-- **Observed Working Directory:** `/home/ubuntu/actions-runner/_work/realtime-chat-app/realtime-chat-app`
-- **File System State:** Verified that `actions/checkout@v4` successfully established, synchronized, and unpacked the full codebase footprint into the localized daemon workspace.
-
-All three baseline assumptions have passed testing. The automation layer is verified and ready to accept operational application delivery blocks.
-
-
-### Lessons Learned
-
-A GitHub Actions workflow is independent of the execution environment.
-
-The same workflow can execute on:
-
-- GitHub-hosted runners
-- Self-hosted runners
-
-without changing the overall workflow architecture.
-
-Only the execution environment changes.
+**Related documents:**
+- [README.md](./README.md) — Project overview, architecture, engineering decisions, and production considerations
+- [CloudDeployment.md](./CloudDeployment.md) — Infrastructure provisioning, server preparation, and deployment verification
+- [BugFix.md](./BugFix.md) — Root cause analysis for the three configuration bugs resolved during this project
 
 ---
 
-## ADR 02 — Deployment Workspace Allocation Strategy
+## Pipeline Overview
 
-### Context
-Since the GitHub Actions runner agent is deployed natively inside our target staging instance, a structural workspace mapping choice must be settled. We must determine whether the container orchestration loop should run straight from the runner’s internal work directory or inside a decoupled, separate deployment directory on the host.
+Every push to the `main` branch automatically triggers a deployment. The GitHub Actions workflow pulls the latest code onto the EC2 instance and rebuilds the Docker Compose stack. No manual intervention is required after a commit is merged.
 
-### Options Considered
-
-#### Option A — Decoupled Host Production Directory
-- **Advantages:** Absolute separation of operational domains; allows wiping, re-installing, or updates to the GitHub Actions runner binaries without risking downtime or modifications to the active application source paths.
-- **Disadvantages:** Increases pipeline step layout complexity under tight submission time limits by introducing an explicit secondary local directory synchronization pass (e.g., `rsync` or local copy).
-
-#### Option B — Direct Runner Workspace Execution
-- **Advantages:** Highly streamlined automation pipeline; less configuration script overhead; container lifecycle tools execute directly out of the runner's ephemeral checkout block, fully answering the core assignment automation constraints.
-- **Disadvantages:** Directly couples the running containers to the internal hidden paths managed exclusively by the runner daemon (`_work/...`).
-
-### Decision & Trade-Off Evaluation
-**Selected: Option B (Direct Runner Workspace Execution).**
-
-Given the close project submission deadline, Option B provides the fastest and most reliable path to end-to-end automation with the lowest probability of execution failure. This architectural trade-off is accepted for the staging scope of this assignment. In a permanent enterprise cloud environment, Option A would be explicitly deployed to guarantee clean operational decoupling between integration agents and production runtimes.
-
-### Deployment Directory Isolation & Decoupling Strategy
-
-The staging architecture implements a completely decoupled directory model to isolate CI/CD framework tasks from runtime application assets. While the self-hosted GitHub Actions runner daemon checks out source repositories natively into its internal hidden workspace (`_work/...`), the operational application stack executes out of a separate dedicated directory (`/home/ubuntu/realtime-chat-app`).
-
-#### Core Engineering Advantages
-- **Infrastructure Resilience:** The self-hosted runner binaries can be wiped, updated, or completely re-installed without modifying the underlying source files or introducing active downtime to the running application containers.
-- **Predictable Paths:** Application paths remain completely invariant, decoupled from the runner daemon's dynamic, hidden directory configurations.
-- **Enterprise Alignment:** This matches professional, enterprise-grade architecture workflows where compilation agents and target delivery perimeters operate within strictly bounded, separate execution domains.
+The pipeline encodes the deployment process once and executes it identically on every run. This eliminates the class of failures that arise from engineers running commands in slightly different orders or against slightly different environments.
 
 ---
 
-## Milestone 3 — Manual Deployment Sequence Validation
-
-### Business Problem
-
-Before automating deployment, the deployment commands themselves must be validated manually. Automating unverified commands can make debugging significantly more difficult because failures become intertwined with the automation platform.
-
-### Engineering Decision
-
-The deployment sequence was executed manually from the dedicated application directory before being incorporated into the GitHub Actions workflow.
-
-Validated sequence:
-
-1. Navigate to the deployment directory.
-2. Synchronize the repository using `git pull`.
-3. Rebuild and restart the application stack using `docker-compose up -d --build`.
-
-This establishes a known-good deployment procedure that can later be automated with confidence.
-
-### Verification
-
-The deployment sequence will be considered validated after:
-
-- `git pull` completes successfully.
-- Docker Compose rebuilds the application.
-- The required containers are running and healthy.
-
-
-### Operational Verification Evidence
-
-Before integrating the deployment sequence into the GitHub Actions workflow, the complete deployment process was executed manually on the target EC2 instance. This follows a fundamental DevOps engineering principle:
-
-> Never automate a deployment process that has not first been validated manually.
-
-### Validation Commands
-
-```bash
-cd /home/ubuntu/realtime-chat-app
-
-git status
-git pull
-docker-compose up -d --build
-
-docker ps
-```
-
-### Purpose of Each Validation Step
-
-| Command | Engineering Purpose |
-|---------|---------------------|
-| `git status` | Verify that the deployment repository is in a clean state with no uncommitted or unexpected local modifications before updating the application. |
-| `git pull` | Synchronize the deployment directory with the latest repository state, ensuring that production uses the newest committed source code. |
-| `docker-compose up -d --build` | Rebuild application images when required, recreate modified containers, and start the complete application stack in detached mode. |
-| `docker ps` | Confirm that all expected containers are running successfully after deployment and that the application runtime is operational. |
-
-### Verification Results
-
-The deployment sequence completed successfully.
-
-Observed verification signals:
-- `git status` reported a clean working tree.
-- `git pull` confirmed the deployment repository was already synchronized with the remote repository.
-- Docker Compose successfully built the backend image and created the required application containers.
-- Runtime verification confirmed both application services entered the **Up** state.
-
-Validated runtime:
-
-| Container | Status |
-|-----------|--------|
-| `chat-backend` | Running |
-| `chat-nginx` | Running |
-
-### Engineering Outcome
-
-This manual verification established a known-good deployment procedure before introducing workflow automation.
-
-By validating the deployment sequence independently of GitHub Actions, any future failures can be isolated to the automation layer rather than the deployment commands themselves, significantly simplifying troubleshooting and reducing operational risk.
-
-### Operational Principle
-
-The deployment commands were intentionally validated through direct execution before being embedded into the GitHub Actions workflow.
-
-This follows an incremental automation strategy where manual processes are first proven reliable, then automated without altering their execution logic. This approach minimizes deployment risk and improves the traceability of failures during CI/CD implementation.
-
----
-
-## Milestone 4 — Automated Continuous Deployment
-
-### Business Problem
-
-Although the deployment process had been validated manually, it still depended on an engineer connecting to the server and executing deployment commands. This introduced unnecessary operational effort and increased the possibility of human error.
-
-### Engineering Decision
-
-The validated deployment sequence was incorporated into a GitHub Actions workflow executed by a self-hosted runner installed on the deployment server.
-
-The workflow performs the following operations automatically after every push to the `main` branch:
-
-1. Trigger the workflow.
-2. Execute on the self-hosted runner.
-3. Navigate to the dedicated deployment directory.
-4. Synchronize the repository using `git pull`.
-5. Build and update the application using `docker-compose up -d --build`.
-6. Verify that the application containers are running using `docker ps`.
-
-### Deployment Flow
+## Workflow Architecture
 
 ```
 Developer
     │
-    ▼
-Git Push
+    ▼ git push → main
+GitHub Event Trigger
     │
-    ▼
-GitHub Actions
+    ▼ runs-on: self-hosted
+Self-hosted Runner (EC2: 52.70.212.146)
     │
-    ▼
-Self-hosted Runner
+    ▼ actions/checkout@v4
+Repository Checkout
     │
-    ▼
-Application Directory
+    ▼ cd /home/ubuntu/realtime-chat-app && git pull
+Source Synchronisation
     │
-    ▼
-git pull
+    ▼ docker-compose up -d --build
+Container Rebuild and Restart
     │
-    ▼
-docker-compose up -d --build
-    │
-    ▼
-docker ps
+    ▼ docker ps
+Post-deployment Verification
     │
     ▼
 Deployment Complete
 ```
 
-### Engineering Benefits
+Each stage is described in detail in the sections below.
 
-- Eliminates manual deployment activities.
-- Ensures every deployment follows the same validated process.
-- Uses an idempotent deployment command that safely handles repeated executions.
-- Separates CI infrastructure from the application deployment directory.
-- Includes post-deployment verification to confirm that application services are running successfully.
+---
 
-### Failure Handling Strategy
+## Workflow Configuration
 
-The deployment workflow follows a fail-fast execution model by enabling Bash strict error handling using:
+The complete workflow is defined in `.github/workflows/deploy.yml`.
 
-```bash
-set -e
+```yaml
+name: Deploy Application
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy Application
+        run: |
+          set -e
+          cd /home/ubuntu/realtime-chat-app
+          git pull
+          docker-compose up -d --build
+
+      - name: Verify Deployment
+        run: |
+          docker ps
 ```
 
-This ensures that the workflow immediately terminates if any deployment command returns a non-zero exit status.
+### Trigger
 
-For example:
+```yaml
+on:
+  push:
+    branches:
+      - main
+```
 
-- Failure during `git pull` prevents an outdated or inconsistent deployment.
-- Failure during `docker-compose up -d --build` prevents deployment verification from executing against a partially deployed application.
+The workflow fires on every push to `main`. No other branches trigger a deployment. This means feature branches can be developed and committed without triggering a deployment until they are merged.
 
-This approach simplifies troubleshooting by stopping execution at the point of failure and reporting the root cause directly in the GitHub Actions logs.
+### Runner Selection
+
+```yaml
+runs-on: self-hosted
+```
+
+The job targets the self-hosted runner registered on the EC2 instance rather than a GitHub-hosted runner. See [Self-hosted Runner](#self-hosted-runner) below for the rationale.
+
+### Step 1 — Checkout Repository
+
+```yaml
+- name: Checkout Repository
+  uses: actions/checkout@v4
+```
+
+`actions/checkout@v4` clones the repository into the runner's internal workspace at:
+```
+/home/ubuntu/actions-runner/_work/realtime-chat-app/realtime-chat-app
+```
+
+This step was verified during initial pipeline setup. Observed outputs confirmed:
+- The push event was detected by GitHub.
+- The runner accepted the job.
+- The repository contents were unpacked into the runner workspace.
+- Commands executed under the `ubuntu` service account.
+
+### Step 2 — Deploy Application
+
+```yaml
+- name: Deploy Application
+  run: |
+    set -e
+    cd /home/ubuntu/realtime-chat-app
+    git pull
+    docker-compose up -d --build
+```
+
+| Command | Purpose |
+| :--- | :--- |
+| `set -e` | Fail-fast — the step exits immediately if any command returns a non-zero exit code, preventing a partially failed deployment from reaching the verification step |
+| `cd /home/ubuntu/realtime-chat-app` | Switches to the dedicated application directory, which is decoupled from the runner's internal workspace |
+| `git pull` | Synchronises the application directory with the latest committed state on `main` |
+| `docker-compose up -d --build` | Rebuilds any images affected by code changes and recreates the corresponding containers in detached mode; services whose images are unchanged are left running |
+
+The deployment directory `/home/ubuntu/realtime-chat-app` is intentionally separate from the runner's `_work/` path. This means the runner can be updated, reinstalled, or removed without affecting the running containers or application source files.
+
+### Step 3 — Verify Deployment
+
+```yaml
+- name: Verify Deployment
+  run: |
+    docker ps
+```
+
+`docker ps` outputs the running container table immediately after deployment. If both `chat-backend` and `chat-nginx` appear in the `Up` state, the step exits cleanly and the workflow completes successfully. If either container failed to start, `docker ps` does not cause the workflow to fail — this step provides visibility rather than a health gate. A more robust check would poll the HTTP endpoint until it responds; see [Current Limitations](#current-limitations).
+
+---
+
+## Self-hosted Runner
+
+### Why a self-hosted runner was used
+
+The pipeline was originally designed to use a GitHub-hosted runner (`runs-on: ubuntu-latest`). During implementation, GitHub Actions workflow dispatch failed to allocate a hosted runner due to account-level billing restrictions on the GitHub account. Waiting for hosted runner availability was not viable within the project timeline.
+
+A self-hosted runner was installed directly on the EC2 instance as an alternative. This is a supported GitHub Actions configuration and preserves the same event-driven workflow model — only the execution environment changes.
+
+### How it differs from GitHub-hosted runners
+
+| Aspect | GitHub-hosted runner | Self-hosted runner (this project) |
+| :--- | :--- | :--- |
+| Provisioned by | GitHub | Project owner |
+| Lifecycle | Ephemeral — created and destroyed per job | Persistent — daemon runs continuously on EC2 |
+| Environment | Fresh Ubuntu VM each run | Existing EC2 instance with Docker installed |
+| Maintenance | None required | Runner process must be kept running |
+| Access to Docker | Not pre-installed for deployment to remote hosts | Direct — Docker is installed on the same host |
+| SSH required for deployment | Yes — credentials needed to reach EC2 | No — runner executes locally on the target host |
+
+### Security impact
+
+The original GitHub-hosted runner design required an SSH connection from the runner to the EC2 instance, which meant storing the private key as a GitHub Actions secret and exposing Port 22 to the runner's dynamic IP range. With the self-hosted runner installed on EC2, the SSH hop is eliminated entirely. The runner executes `docker-compose` directly on the host where the containers run. No external secrets are required in the deployment path.
+
+### Runner workspace and deployment directory
+
+The runner checks out the repository into its internal workspace:
+```
+/home/ubuntu/actions-runner/_work/realtime-chat-app/realtime-chat-app
+```
+
+The application runs from a separate directory:
+```
+/home/ubuntu/realtime-chat-app
+```
+
+The deployment step explicitly `cd`s into the application directory before running `git pull` and `docker-compose`. This decoupling means:
+- The runner workspace is used only for the checkout step.
+- The running containers are never dependent on the runner's internal paths.
+- Updating or reinstalling the runner does not cause downtime.
+
+---
+
+## Manual Deployment Validation
+
+Before the deployment sequence was embedded in the GitHub Actions workflow, it was validated manually on the EC2 instance. This followed the principle of not automating a process that has not first been confirmed to work.
+
+The following commands were run directly on the instance:
+
+```bash
+cd /home/ubuntu/realtime-chat-app
+git status
+git pull
+docker-compose up -d --build
+docker ps
+```
+
+| Command | What it confirmed |
+| :--- | :--- |
+| `git status` | Working tree was clean; no unexpected local modifications |
+| `git pull` | Repository successfully synchronised with the remote |
+| `docker-compose up -d --build` | Backend image built successfully; both containers started |
+| `docker ps` | `chat-backend` and `chat-nginx` entered the `Up` state |
+
+Once this sequence was confirmed to produce the correct outcome manually, it was incorporated into the GitHub Actions workflow without modification. This approach means any future workflow failure can be attributed to the automation layer rather than the deployment commands themselves.
+
+---
+
+## Deployment Verification
+
+The following verification activities were performed after the automated pipeline was operational.
+
+| Verification | Method | Result |
+| :--- | :--- | :--- |
+| Workflow trigger | Push to `main`; Actions tab reviewed | Workflow triggered immediately; job accepted by self-hosted runner |
+| Runner identity | Actions log — identity check | Executing as `ubuntu` on EC2 — confirmed local execution on target host |
+| Repository checkout | Actions log — checkout step | `actions/checkout@v4` unpacked repository into runner workspace |
+| Source synchronisation | `git pull` output in Actions log | Deployment directory synchronised with latest `main` commit |
+| Container rebuild | `docker-compose up -d --build` log | Backend image rebuilt; both containers recreated |
+| Container status | `docker ps` in Verify Deployment step | `chat-backend` and `chat-nginx` both in `Up` state |
+| HTTP response | `curl http://52.70.212.146` from external host | HTTP 200 — application served correctly post-deployment |
+| WebSocket connection | Browser DevTools, `/ws` connection state | HTTP 101 Switching Protocols — WebSocket handshake completed |
+| Multi-user broadcast | Two browser tabs at public IP | Messages sent from one tab appeared immediately in the other |
+
+---
+
+## Current Pipeline Characteristics
+
+| Characteristic | Detail |
+| :--- | :--- |
+| Trigger | Push to `main` branch |
+| Execution environment | Self-hosted runner on EC2 |
+| Deployment command | `docker-compose up -d --build` |
+| Fail-fast behaviour | `set -e` — any command failure stops the workflow |
+| Post-deployment check | `docker ps` confirms containers are running |
+| Secrets required | None — runner executes locally on the deployment host |
+| Manual steps required | None — fully automated from push to running containers |
+| Deployment idempotency | `docker-compose up -d --build` safely handles repeated runs |
+
+---
+
+## Current Limitations
+
+These are real characteristics of the current pipeline, not theoretical gaps.
+
+**Brief downtime during container recreation.**
+`docker-compose up -d --build` stops and recreates containers whose images have changed. There is a short window — typically a few seconds — during which the application is not serving requests. For a staging environment this is acceptable. A production deployment would use a rolling update strategy or a load balancer to eliminate the gap.
+
+**No deployment health check.**
+The `Verify Deployment` step runs `docker ps` to confirm containers are in the `Up` state. It does not poll the HTTP endpoint or the WebSocket endpoint to confirm the application is actually responding. A container can be `Up` while the process inside it is still starting. A curl-based readiness check would close this gap.
+
+**No rollback automation.**
+If `docker-compose up -d --build` succeeds but the application is unhealthy, there is no automated mechanism to revert to the previous image. A rollback requires manual intervention: SSH to the instance, identify the previous image tag, and restart the containers from it. Pinning image versions in the Compose file or pushing images to a registry before deployment would enable automated rollback.
+
+**No deployment approval stage.**
+Any push to `main` triggers an immediate deployment. There is no review gate, manual approval step, or staging environment between a merge and a production deployment. For a single-developer assignment this is appropriate; for a team environment it would introduce risk.
+
+**No automated integration tests.**
+The pipeline does not run tests before deploying. There is no step that executes the test suite, validates the application health, or gates the deployment on a passing result. Adding a test job that runs before the deploy job would catch regressions before they reach the deployed environment.
+
+**Runner availability dependency.**
+If the self-hosted runner daemon stops on the EC2 instance, all deployments queue indefinitely. There is no fallback runner. The runner must be manually restarted if it exits. Configuring the runner as a `systemd` service with `Restart=always` would provide automatic recovery.
+
+---
+
+## Summary
+
+The GitHub Actions pipeline in this project demonstrates end-to-end CI/CD automation using a self-hosted runner, Docker Compose, and AWS EC2. Every push to `main` automatically pulls the latest code, rebuilds affected containers, and confirms they are running — without any manual steps. The pipeline was implemented incrementally: the runner was verified before the deployment commands were added, and the deployment commands were validated manually before being automated. This approach kept each layer independently testable and made failures straightforward to diagnose. The pipeline is intentionally simple, matching the scope of an educational DevOps assignment while applying the same automation principles used in production workflows.

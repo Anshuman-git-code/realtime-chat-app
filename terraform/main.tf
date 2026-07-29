@@ -34,7 +34,9 @@ resource "aws_security_group" "chat_sg" {
   description = "Minimum viable ports for secure administration and application delivery"
   vpc_id      = data.aws_vpc.default.id
 
-  # Ingress rule left open to SSH Access for my Mac and to support dynamic GitHub Actions Runner execution paths
+  # Port 22: Administrative SSH access for instance management and assignment evaluation.
+  # Open to 0.0.0.0/0 because the self-hosted runner executes locally on the instance
+  # and does not require inbound SSH. Restrict to known IP ranges in production.
   ingress {
     description = "SSH administrative entrypoint"
     from_port   = 22
@@ -43,7 +45,7 @@ resource "aws_security_group" "chat_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # HTTP Web Traffic proxying to Nginx
+  # Port 80: Public HTTP entrypoint — traffic is received by the NGINX reverse proxy
   ingress {
     description = "Public Nginx HTTP entrypoint"
     from_port   = 80
@@ -52,7 +54,7 @@ resource "aws_security_group" "chat_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Outbound internet access so the VM can install packages and pull images
+  # Unrestricted outbound so the instance can reach apt, Docker Hub, and GitHub
   egress {
     from_port   = 0
     to_port     = 0
@@ -61,18 +63,17 @@ resource "aws_security_group" "chat_sg" {
   }
 }
 
-# 4. Automatically Upload and Register My New Key Pair
+# 4. Register the SSH public key for EC2 access
 resource "aws_key_pair" "deployer_key" {
   key_name   = "chat-assignment-key"
   public_key = file("~/Downloads/chat-assignment-key.pub")
 }
 
-# 5. EC2 Instance Definition Linked to the Key Above
+# 5. EC2 instance — linked to the AMI lookup, key pair, and security group above
 resource "aws_instance" "chat_server" {
-  ami           = data.aws_ami.ubuntu.id # Linked dynamically to the data lookup output
-  instance_type = "t3.micro"             # Free-tier eligible
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t3.micro"
 
-  # Updated: Linked dynamically to the key pair resource above
   key_name               = aws_key_pair.deployer_key.key_name
   vpc_security_group_ids = [aws_security_group.chat_sg.id]
 
@@ -82,7 +83,8 @@ resource "aws_instance" "chat_server" {
     delete_on_termination = true
   }
 
-  # Automate Docker runtime engine bootstrap on initial initialization block
+  # Bootstrap script: installs Docker on first boot so the instance is
+  # deployment-ready without manual preparation after provisioning
   user_data = <<-EOF
               #!/bin/bash
               apt-get update
@@ -108,7 +110,7 @@ resource "aws_eip_association" "eip_assoc" {
   allocation_id = aws_eip.chat_eip.id
 }
 
-# 7. Output Block to instantly display your entrypoint
+# 7. Output the public IP immediately after apply
 output "staging_public_ip" {
   description = "The static public Elastic IP address assigned to the staging application server"
   value       = aws_eip.chat_eip.public_ip

@@ -12,8 +12,9 @@ services:
     ports:
       - "80:80"
     volumes:
-      # Fixed: Uncommented so Nginx can actually serve your frontend files
+      # Mount static frontend files into the NGINX document root (read-only)
       - ./frontend:/usr/share/nginx/html:ro
+      # Mount custom NGINX configuration to enable reverse proxy and WebSocket routing (read-only)
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - backend
