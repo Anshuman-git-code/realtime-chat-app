@@ -283,3 +283,19 @@ Deployment Complete
 - Separates CI infrastructure from the application deployment directory.
 - Includes post-deployment verification to confirm that application services are running successfully.
 
+### Failure Handling Strategy
+
+The deployment workflow follows a fail-fast execution model by enabling Bash strict error handling using:
+
+```bash
+set -e
+```
+
+This ensures that the workflow immediately terminates if any deployment command returns a non-zero exit status.
+
+For example:
+
+- Failure during `git pull` prevents an outdated or inconsistent deployment.
+- Failure during `docker-compose up -d --build` prevents deployment verification from executing against a partially deployed application.
+
+This approach simplifies troubleshooting by stopping execution at the point of failure and reporting the root cause directly in the GitHub Actions logs.
