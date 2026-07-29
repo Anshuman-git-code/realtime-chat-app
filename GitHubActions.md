@@ -50,7 +50,6 @@ A self-hosted GitHub Actions runner was selected for this assignment to guarante
 
 This decision preserves the same event-driven workflow model while changing only the execution environment from GitHub-hosted infrastructure to infrastructure owned by the project.
 
----
 
 ### Architectural & Security Impact Matrix
 
@@ -76,3 +75,37 @@ Developer
 
 **Key Architectural Engineering Trade-Off:** 
 By installing the runner directly on the target deployment environment, the need for an external SSH network hop (`appleboy/ssh-action` or `appleboy/scp-action`) is completely eliminated. The runner executes build steps natively inside the target VM file system. This drastically reduces the attack surface by minimizing external authentication points and streamlining container management loops.
+
+### Verification
+
+The verification workflow successfully demonstrated:
+
+- GitHub detected the push event.
+- The self-hosted runner accepted the job.
+- Repository checkout completed successfully.
+- Repository contents became available inside the runner workspace.
+- Shell commands executed successfully under the ubuntu service account.
+
+### Milestone 1 Validation Output & Results
+The runner configuration strategy successfully initialized on the cloud host. On-screen logs from the pipeline dashboard confirmed complete foundational stability:
+- **Observed User Identity:** `ubuntu` (Confirmed direct execution inside the local EC2 machine context).
+- **Observed Working Directory:** `/home/ubuntu/actions-runner/_work/realtime-chat-app/realtime-chat-app`
+- **File System State:** Verified that `actions/checkout@v4` successfully established, synchronized, and unpacked the full codebase footprint into the localized daemon workspace.
+
+All three baseline assumptions have passed testing. The automation layer is verified and ready to accept operational application delivery blocks.
+
+
+### Lessons Learned
+
+A GitHub Actions workflow is independent of the execution environment.
+
+The same workflow can execute on:
+
+- GitHub-hosted runners
+- Self-hosted runners
+
+without changing the overall workflow architecture.
+
+Only the execution environment changes.
+
+---
