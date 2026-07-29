@@ -139,6 +139,8 @@ The staging architecture implements a completely decoupled directory model to is
 - **Predictable Paths:** Application paths remain completely invariant, decoupled from the runner daemon's dynamic, hidden directory configurations.
 - **Enterprise Alignment:** This matches professional, enterprise-grade architecture workflows where compilation agents and target delivery perimeters operate within strictly bounded, separate execution domains.
 
+---
+
 ## Milestone 3 — Manual Deployment Sequence Validation
 
 ### Business Problem
@@ -222,7 +224,62 @@ The deployment commands were intentionally validated through direct execution be
 
 This follows an incremental automation strategy where manual processes are first proven reliable, then automated without altering their execution logic. This approach minimizes deployment risk and improves the traceability of failures during CI/CD implementation.
 
+---
 
+## Milestone 4 — Automated Continuous Deployment
 
+### Business Problem
 
+Although the deployment process had been validated manually, it still depended on an engineer connecting to the server and executing deployment commands. This introduced unnecessary operational effort and increased the possibility of human error.
+
+### Engineering Decision
+
+The validated deployment sequence was incorporated into a GitHub Actions workflow executed by a self-hosted runner installed on the deployment server.
+
+The workflow performs the following operations automatically after every push to the `main` branch:
+
+1. Trigger the workflow.
+2. Execute on the self-hosted runner.
+3. Navigate to the dedicated deployment directory.
+4. Synchronize the repository using `git pull`.
+5. Build and update the application using `docker-compose up -d --build`.
+6. Verify that the application containers are running using `docker ps`.
+
+### Deployment Flow
+
+```
+Developer
+    │
+    ▼
+Git Push
+    │
+    ▼
+GitHub Actions
+    │
+    ▼
+Self-hosted Runner
+    │
+    ▼
+Application Directory
+    │
+    ▼
+git pull
+    │
+    ▼
+docker-compose up -d --build
+    │
+    ▼
+docker ps
+    │
+    ▼
+Deployment Complete
+```
+
+### Engineering Benefits
+
+- Eliminates manual deployment activities.
+- Ensures every deployment follows the same validated process.
+- Uses an idempotent deployment command that safely handles repeated executions.
+- Separates CI infrastructure from the application deployment directory.
+- Includes post-deployment verification to confirm that application services are running successfully.
 

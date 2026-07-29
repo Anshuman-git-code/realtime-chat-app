@@ -1,4 +1,4 @@
-name: Chat Application Deployment Pipeline
+name: Deploy Application
 
 on:
   push:
@@ -6,25 +6,19 @@ on:
       - main
 
 jobs:
-  verify-runner:
-    # Fixed: Divert workflow scheduling path to leverage the self-hosted AWS runner
+  deploy:
     runs-on: self-hosted
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Display Runner Information
+      - name: Deploy Application
         run: |
-          echo "Current Execution User Identity:"
-          whoami
+          cd /home/ubuntu/realtime-chat-app
+          git pull
+          docker-compose up -d --build
 
-          echo ""
-
-          echo "Current Engine Working Directory:"
-          pwd
-
-          echo ""
-
-          echo "Repository Directory Trace Log:"
-          ls -la
+      - name: Verify Deployment
+        run: |
+          docker ps
