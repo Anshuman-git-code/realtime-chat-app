@@ -129,3 +129,38 @@ Since the GitHub Actions runner agent is deployed natively inside our target sta
 **Selected: Option B (Direct Runner Workspace Execution).**
 
 Given the close project submission deadline, Option B provides the fastest and most reliable path to end-to-end automation with the lowest probability of execution failure. This architectural trade-off is accepted for the staging scope of this assignment. In a permanent enterprise cloud environment, Option A would be explicitly deployed to guarantee clean operational decoupling between integration agents and production runtimes.
+
+### Deployment Directory Isolation & Decoupling Strategy
+
+The staging architecture implements a completely decoupled directory model to isolate CI/CD framework tasks from runtime application assets. While the self-hosted GitHub Actions runner daemon checks out source repositories natively into its internal hidden workspace (`_work/...`), the operational application stack executes out of a separate dedicated directory (`/home/ubuntu/realtime-chat-app`).
+
+#### Core Engineering Advantages
+- **Infrastructure Resilience:** The self-hosted runner binaries can be wiped, updated, or completely re-installed without modifying the underlying source files or introducing active downtime to the running application containers.
+- **Predictable Paths:** Application paths remain completely invariant, decoupled from the runner daemon's dynamic, hidden directory configurations.
+- **Enterprise Alignment:** This matches professional, enterprise-grade architecture workflows where compilation agents and target delivery perimeters operate within strictly bounded, separate execution domains.
+
+## Milestone 3 — Manual Deployment Sequence Validation
+
+### Business Problem
+
+Before automating deployment, the deployment commands themselves must be validated manually. Automating unverified commands can make debugging significantly more difficult because failures become intertwined with the automation platform.
+
+### Engineering Decision
+
+The deployment sequence was executed manually from the dedicated application directory before being incorporated into the GitHub Actions workflow.
+
+Validated sequence:
+
+1. Navigate to the deployment directory.
+2. Synchronize the repository using `git pull`.
+3. Rebuild and restart the application stack using `docker-compose up -d --build`.
+
+This establishes a known-good deployment procedure that can later be automated with confidence.
+
+### Verification
+
+The deployment sequence will be considered validated after:
+
+- `git pull` completes successfully.
+- Docker Compose rebuilds the application.
+- The required containers are running and healthy.
