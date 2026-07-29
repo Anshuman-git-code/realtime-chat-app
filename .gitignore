@@ -1,0 +1,29 @@
+# --- Security & Private Credentials ---
+*.pem
+*.key
+*.pub
+id_rsa
+secrets.tfvars
+
+# --- Terraform Framework State & Binaries ---
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+.terraform.tfstate.lock.info
+
+# --- Docker Local Runtime Cache ---
+.docker/
+html/
+# Ignore python cache files locally
+__pycache__/
+*.pyc
+
+# --- Local Environment Configurations ---
+.env
+.env.local
+.env.*.local
+
+# --- Operating System Artifacts ---
+.DS_Store
+Thumbs.db
