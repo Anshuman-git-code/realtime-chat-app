@@ -164,3 +164,65 @@ The deployment sequence will be considered validated after:
 - `git pull` completes successfully.
 - Docker Compose rebuilds the application.
 - The required containers are running and healthy.
+
+
+### Operational Verification Evidence
+
+Before integrating the deployment sequence into the GitHub Actions workflow, the complete deployment process was executed manually on the target EC2 instance. This follows a fundamental DevOps engineering principle:
+
+> Never automate a deployment process that has not first been validated manually.
+
+### Validation Commands
+
+```bash
+cd /home/ubuntu/realtime-chat-app
+
+git status
+git pull
+docker-compose up -d --build
+
+docker ps
+```
+
+### Purpose of Each Validation Step
+
+| Command | Engineering Purpose |
+|---------|---------------------|
+| `git status` | Verify that the deployment repository is in a clean state with no uncommitted or unexpected local modifications before updating the application. |
+| `git pull` | Synchronize the deployment directory with the latest repository state, ensuring that production uses the newest committed source code. |
+| `docker-compose up -d --build` | Rebuild application images when required, recreate modified containers, and start the complete application stack in detached mode. |
+| `docker ps` | Confirm that all expected containers are running successfully after deployment and that the application runtime is operational. |
+
+### Verification Results
+
+The deployment sequence completed successfully.
+
+Observed verification signals:
+- `git status` reported a clean working tree.
+- `git pull` confirmed the deployment repository was already synchronized with the remote repository.
+- Docker Compose successfully built the backend image and created the required application containers.
+- Runtime verification confirmed both application services entered the **Up** state.
+
+Validated runtime:
+
+| Container | Status |
+|-----------|--------|
+| `chat-backend` | Running |
+| `chat-nginx` | Running |
+
+### Engineering Outcome
+
+This manual verification established a known-good deployment procedure before introducing workflow automation.
+
+By validating the deployment sequence independently of GitHub Actions, any future failures can be isolated to the automation layer rather than the deployment commands themselves, significantly simplifying troubleshooting and reducing operational risk.
+
+### Operational Principle
+
+The deployment commands were intentionally validated through direct execution before being embedded into the GitHub Actions workflow.
+
+This follows an incremental automation strategy where manual processes are first proven reliable, then automated without altering their execution logic. This approach minimizes deployment risk and improves the traceability of failures during CI/CD implementation.
+
+
+
+
+
